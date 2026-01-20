@@ -2,6 +2,100 @@
  * Telegram Bot API client
  */
 
+import https from 'https'
+import { URL } from 'url'
+
+/**
+ * Make HTTPS request using Node.js https module
+ * @param {string} urlString - Full URL
+ * @param {object} body - Request body
+ * @param {AbortSignal} signal - Abort signal
+ * @returns {Promise<{status: number, statusText: string, data: any}>} - Response data
+ */
+async function httpsRequest(
+  urlString: string,
+  body: object,
+  signal: AbortSignal
+): Promise<{ status: number; statusText: string; data: any }>
+{
+  return new Promise((resolve, reject) =>
+  {
+    const url = new URL(urlString)
+    const postData = JSON.stringify(body)
+
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'FindOrigin-Bot/1.0',
+      },
+      timeout: 10000, // 10 second timeout
+    }
+
+    const req = https.request(options, (res) =>
+    {
+      let data = ''
+
+      res.on('data', (chunk) =>
+      {
+        data += chunk
+      })
+
+      res.on('end', () =>
+      {
+        try
+        {
+          const jsonData = JSON.parse(data)
+          resolve({
+            status: res.statusCode || 500,
+            statusText: res.statusMessage || 'OK',
+            data: jsonData,
+          })
+        }
+        catch (error)
+        {
+          resolve({
+            status: res.statusCode || 500,
+            statusText: res.statusMessage || 'OK',
+            data: { raw: data },
+          })
+        }
+      })
+    })
+
+    req.on('error', (error) =>
+    {
+      console.error('HTTPS request error:', error)
+      reject(error)
+    })
+
+    req.on('timeout', () =>
+    {
+      req.destroy()
+      reject(new Error('Request timeout'))
+    })
+
+    if (signal.aborted)
+    {
+      req.destroy()
+      reject(new Error('Request aborted'))
+      return
+    }
+
+    signal.addEventListener('abort', () =>
+    {
+      req.destroy()
+    })
+
+    req.write(postData)
+    req.end()
+  })
+}
+
 // Lazy initialization to avoid errors during build
 function getApiBaseUrl(): string
 {
@@ -57,87 +151,81 @@ export async function sendMessage(
     hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
   })
 
-  // Add timeout and better error handling for Vercel serverless
+  // Use https module directly for better reliability in Vercel serverless
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
   try
   {
-    const response = await fetch(url, {
+    console.log('Attempting HTTPS request to Telegram API...', {
+      url: url.replace(/\/bot[^\/]+/, '/bot***'),
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'FindOrigin-Bot/1.0',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
+      bodySize: JSON.stringify(body).length,
     })
+
+    const response = await httpsRequest(url, body, controller.signal)
     
     clearTimeout(timeoutId)
+    
+    console.log('Response received:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.status >= 200 && response.status < 300,
+    })
 
-    if (!response.ok)
+    if (response.status < 200 || response.status >= 300)
     {
-      const errorText = await response.text()
-      let errorData
-      try
-      {
-        errorData = JSON.parse(errorText)
-      }
-      catch
-      {
-        errorData = { raw: errorText }
-      }
-      
       console.error('Telegram API error response:', {
         status: response.status,
         statusText: response.statusText,
-        error: errorData,
+        error: response.data,
       })
       
-      throw new Error(`Telegram API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
+      throw new Error(`Telegram API error: ${response.status} ${response.statusText} - ${JSON.stringify(response.data)}`)
     }
 
-    const result = await response.json()
     console.log('Message sent successfully:', {
       chatId,
-      messageId: result.result?.message_id,
+      messageId: response.data.result?.message_id,
     })
     
-    return result
+    return response.data
   }
-  catch (fetchError)
+  catch (error)
   {
     clearTimeout(timeoutId)
     
+    console.error('Error sending message to Telegram:', {
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      errorName: error instanceof Error ? error.name : 'Unknown',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      chatId,
+      url: url.replace(/\/bot[^\/]+/, '/bot***'),
+    })
+    
     // Handle abort (timeout)
-    if (fetchError instanceof Error && fetchError.name === 'AbortError')
+    if (error instanceof Error && (error.name === 'AbortError' || error.message === 'Request aborted'))
     {
-      console.error('Request timeout:', {
-        chatId,
-        url: url.replace(/\/bot[^\/]+/, '/bot***'),
-      })
       throw new Error('Request timeout: Telegram API did not respond within 10 seconds')
     }
     
     // Handle network errors
-    if (fetchError instanceof Error && (fetchError.message.includes('fetch failed') || fetchError.message.includes('ECONNREFUSED')))
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const isNetworkError = 
+      errorMessage.includes('fetch failed') ||
+      errorMessage.includes('ECONNREFUSED') ||
+      errorMessage.includes('ENOTFOUND') ||
+      errorMessage.includes('ETIMEDOUT') ||
+      errorMessage.includes('ECONNRESET') ||
+      errorMessage.includes('timeout')
+    
+    if (isNetworkError)
     {
-      console.error('Network error when calling Telegram API:', {
-        url: url.replace(/\/bot[^\/]+/, '/bot***'),
-        error: fetchError.message,
-        chatId,
-      })
-      throw new Error(`Network error: Unable to reach Telegram API. ${fetchError.message}`)
+      throw new Error(`Network error: Unable to reach Telegram API. ${errorMessage}`)
     }
     
-    // Re-throw other errors
-    console.error('Error sending message to Telegram:', {
-      chatId,
-      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-      stack: fetchError instanceof Error ? fetchError.stack : undefined,
-      url: url.replace(/\/bot[^\/]+/, '/bot***'),
-    })
-    throw fetchError
+    throw error
   }
 }
 
