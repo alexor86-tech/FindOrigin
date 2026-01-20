@@ -5,16 +5,24 @@
 import OpenAI from 'openai'
 import { SearchResult } from '../search/google'
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+// Lazy initialization to avoid errors during build
+let openaiInstance: OpenAI | null = null
 
-if (!OPENAI_API_KEY)
+function getOpenAI(): OpenAI
 {
-  throw new Error('OPENAI_API_KEY is not set')
+  if (!openaiInstance)
+  {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey)
+    {
+      throw new Error('OPENAI_API_KEY is not set')
+    }
+    openaiInstance = new OpenAI({
+      apiKey,
+    })
+  }
+  return openaiInstance
 }
-
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-})
 
 export interface ScoredResult extends SearchResult
 {
@@ -83,6 +91,7 @@ Respond in JSON format:
 
   try
   {
+    const openai = getOpenAI()
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [

@@ -2,15 +2,19 @@
  * Telegram Bot API client
  */
 
-const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org/bot'
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
-
-if (!BOT_TOKEN)
+// Lazy initialization to avoid errors during build
+function getApiBaseUrl(): string
 {
-  throw new Error('TELEGRAM_BOT_TOKEN is not set')
+  const apiUrl = process.env.TELEGRAM_API_URL || 'https://api.telegram.org/bot'
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  
+  if (!botToken)
+  {
+    throw new Error('TELEGRAM_BOT_TOKEN is not set')
+  }
+  
+  return `${apiUrl}${botToken}`
 }
-
-const API_BASE_URL = `${TELEGRAM_API_URL}${BOT_TOKEN}`
 
 /**
  * Send message to Telegram chat
@@ -28,7 +32,8 @@ export async function sendMessage(
   } = {}
 ): Promise<object>
 {
-  const url = `${API_BASE_URL}/sendMessage`
+  const apiBaseUrl = getApiBaseUrl()
+  const url = `${apiBaseUrl}/sendMessage`
   const body = {
     chat_id: chatId,
     text,
@@ -68,7 +73,8 @@ export async function sendMessage(
  */
 export async function getMessage(chatId: string, messageId: number): Promise<object>
 {
-  const url = `${API_BASE_URL}/forwardMessage`
+  const apiBaseUrl = getApiBaseUrl()
+  const url = `${apiBaseUrl}/forwardMessage`
   // Note: This is a workaround - Telegram Bot API doesn't allow direct access to channel posts
   // In production, you might need to use Telegram Client API or store messages when bot is added to channel
   throw new Error('Direct message retrieval not supported via Bot API')

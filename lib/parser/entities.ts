@@ -74,35 +74,45 @@ export function extractNumbers(text: string): number[]
   // Numbers with words: "миллион", "тысяча"
   const wordNumberPattern = /\b(\d+)\s*(тысяч|миллион|миллиард|млн|млрд)\b/gi
 
-  let match
+  let match: RegExpExecArray | null
   
   // Extract percentages
   while ((match = percentPattern.exec(text)) !== null)
   {
-    const num = parseFloat(match[1].replace(',', '.'))
-    if (!isNaN(num))
+    if (match && match[1])
     {
-      numbers.push(num)
+      const num = parseFloat(match[1].replace(',', '.'))
+      if (!isNaN(num))
+      {
+        numbers.push(num)
+      }
     }
   }
   
   // Extract regular numbers
   while ((match = numberPattern.exec(text)) !== null)
   {
-    const num = parseFloat(match[1].replace(/[.,]/g, (m, offset) => offset < match[1].length - 3 ? '' : '.'))
-    if (!isNaN(num) && num > 0)
+    if (match && match[1])
     {
-      numbers.push(num)
+      const matchValue = match[1]
+      const num = parseFloat(matchValue.replace(/[.,]/g, (m, offset) => offset < matchValue.length - 3 ? '' : '.'))
+      if (!isNaN(num) && num > 0)
+      {
+        numbers.push(num)
+      }
     }
   }
   
   // Extract word numbers (simplified - just extract the digit part)
   while ((match = wordNumberPattern.exec(text)) !== null)
   {
-    const num = parseFloat(match[1])
-    if (!isNaN(num))
+    if (match && match[1])
     {
-      numbers.push(num)
+      const num = parseFloat(match[1])
+      if (!isNaN(num))
+      {
+        numbers.push(num)
+      }
     }
   }
 
@@ -118,11 +128,14 @@ export function extractLinks(text: string): string[]
 {
   const urlPattern = /https?:\/\/[^\s]+/g
   const links: string[] = []
-  let match
+  let match: RegExpExecArray | null
   
   while ((match = urlPattern.exec(text)) !== null)
   {
-    links.push(match[0])
+    if (match && match[0])
+    {
+      links.push(match[0])
+    }
   }
 
   return [...new Set(links)] // Remove duplicates
@@ -183,7 +196,7 @@ export function extractNames(text: string): string[]
   // Geographic names (cities, countries)
   const geoPattern = /\b(Москва|Санкт-Петербург|Россия|США|Европа|Азия|Африка|Америка)\b/gi
   
-  let match
+  let match: RegExpExecArray | null
   
   // Extract capitalized names
   while ((match = capitalizedPattern.exec(text)) !== null)
