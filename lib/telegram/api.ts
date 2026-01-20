@@ -234,7 +234,14 @@ export async function sendMessage(
     try
     {
       console.log('Trying fetch()...')
-      const fetchResponse = await fetch(url, {
+      console.log('Fetch options:', {
+        method: 'POST',
+        url: url.replace(/\/bot[^\/]+/, '/bot***'),
+        hasBody: !!body,
+        bodySize: JSON.stringify(body).length,
+      })
+      
+      const fetchPromise = fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -243,14 +250,27 @@ export async function sendMessage(
         signal: controller.signal,
       })
       
-      console.log('Fetch response received:', {
+      console.log('Fetch promise created, awaiting...')
+      const fetchResponse = await Promise.race([
+        fetchPromise,
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error('Fetch timeout after 8s')), 8000)
+        ),
+      ])
+      
+      console.log('✅ Fetch response received:', {
         status: fetchResponse.status,
         statusText: fetchResponse.statusText,
         ok: fetchResponse.ok,
+        headers: Object.fromEntries(fetchResponse.headers.entries()),
       })
       
+      console.log('Reading fetch response body...')
       const data = await fetchResponse.json()
-      console.log('Fetch JSON parsed')
+      console.log('✅ Fetch JSON parsed:', {
+        ok: data.ok,
+        hasResult: !!data.result,
+      })
       
       response = {
         status: fetchResponse.status,
@@ -260,10 +280,13 @@ export async function sendMessage(
     }
     catch (fetchError)
     {
-      console.warn('Fetch failed, trying https module:', {
+      console.error('❌ Fetch failed:', {
         error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        errorName: fetchError instanceof Error ? fetchError.name : 'Unknown',
+        stack: fetchError instanceof Error ? fetchError.stack : undefined,
       })
       
+      console.log('Falling back to https module...')
       // Fallback to https module
       response = await httpsRequest(url, body, controller.signal)
     }
