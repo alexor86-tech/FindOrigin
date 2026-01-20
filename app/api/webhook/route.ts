@@ -24,148 +24,122 @@ export async function GET(request: NextRequest)
  */
 export async function POST(request: NextRequest)
 {
+  // Log incoming request
+  console.log('Received webhook request:', {
+    method: request.method,
+    url: request.url,
+    contentType: request.headers.get('content-type'),
+    contentLength: request.headers.get('content-length'),
+  })
+
+  // Read and parse body first (can only be read once)
+  let update: any
   try
   {
-    // Log incoming request for debugging (simplified headers)
-    console.log('Received webhook request:', {
-      method: request.method,
-      url: request.url,
-      contentType: request.headers.get('content-type'),
-      contentLength: request.headers.get('content-length'),
+    console.log('Reading request body...')
+    const bodyText = await Promise.race([
+      request.text(),
+      new Promise<string>((_, reject) => 
+        setTimeout(() => reject(new Error('Read timeout after 5s')), 5000)
+      )
+    ]) as string
+    
+    console.log('Body read, length:', bodyText.length)
+    
+    update = JSON.parse(bodyText)
+    console.log('JSON parsed successfully, update_id:', update?.update_id)
+  }
+  catch (error)
+  {
+    console.error('Error reading/parsing request:', {
+      error: error instanceof Error ? error.message : String(error),
     })
+    // Return 200 OK even on error to prevent Telegram retries
+    return NextResponse.json({ ok: false, error: 'Failed to process request' }, { status: 200 })
+  }
 
-    console.log('Reading request body as text...')
-    let bodyText: string
+  // Return 200 OK immediately to prevent Telegram from retrying
+  const response = NextResponse.json({ ok: true })
+  
+  // Process update asynchronously (don't await)
+  ;(async () =>
+  {
     try
     {
-      bodyText = await request.text()
-      console.log('Request body read successfully, length:', bodyText.length)
-    }
-    catch (readError)
-    {
-      console.error('Error reading request body:', {
-        error: readError instanceof Error ? readError.message : String(readError),
-        stack: readError instanceof Error ? readError.stack : undefined,
-      })
-      return NextResponse.json({ ok: false, error: 'Failed to read request body' }, { status: 400 })
-    }
-
-    console.log('Parsing JSON from body text...')
-    let update
-    try
-    {
-      update = JSON.parse(bodyText)
-      console.log('Request body parsed successfully')
-    }
-    catch (jsonError)
-    {
-      console.error('Error parsing JSON:', {
-        error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-        bodyPreview: bodyText.substring(0, 200),
-      })
-      return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
-    }
-    
-    console.log('Webhook update received:', {
-      updateId: update?.update_id,
-      hasMessage: !!update?.message,
-      hasCallbackQuery: !!update?.callback_query,
-      hasEditedMessage: !!update?.edited_message,
-    })
-    
-    console.log('Webhook update full:', JSON.stringify(update, null, 2))
-
-    // Quick validation
-    if (!update)
-    {
-      console.warn('Empty update received')
-      return NextResponse.json({ ok: false, error: 'Invalid update' }, { status: 400 })
-    }
-
-    // Handle different update types
-    if (!update.message && !update.callback_query && !update.edited_message)
-    {
-      console.log('Update without message (might be other update type):', update.update_id)
-      // Return 200 OK for other update types (e.g., channel posts, edits)
-      return NextResponse.json({ ok: true, message: 'Update received but not processed' })
-    }
-
-    const message = update.message || update.edited_message
-    if (!message)
-    {
-      return NextResponse.json({ ok: true, message: 'No message in update' })
-    }
-
-    const chatId = message.chat?.id
-    const messageText = message.text
-
-    if (!chatId)
-    {
-      console.warn('No chat ID in message:', message)
-      return NextResponse.json({ ok: false, error: 'No chat ID' }, { status: 400 })
-    }
-
-    console.log('Processing message:', { chatId, messageText })
-
-    // Return 200 OK immediately
-    console.log('Returning 200 OK response immediately')
-    const response = NextResponse.json({ ok: true })
-
-    // Handle commands asynchronously
-    console.log('Starting async message processing...')
-    ;(async () =>
-    {
-      try
+      // Quick validation
+      if (!update)
       {
-        // Handle commands
-        if (messageText?.startsWith('/'))
+        console.warn('Empty update received')
+        return
+      }
+
+      // Handle different update types
+      if (!update.message && !update.callback_query && !update.edited_message)
+      {
+        console.log('Update without message:', update.update_id)
+        return
+      }
+
+      const message = update.message || update.edited_message
+      if (!message)
+      {
+        console.log('No message in update')
+        return
+      }
+
+      const chatId = message.chat?.id
+      const messageText = message.text
+
+      if (!chatId)
+      {
+        console.warn('No chat ID in message')
+        return
+      }
+
+      console.log('Processing message:', { chatId, messageText })
+
+      // Handle commands
+      if (messageText?.startsWith('/'))
+      {
+        const command = messageText.split(' ')[0]
+        console.log('Command received:', command)
+        
+        if (command === '/start')
         {
-          const command = messageText.split(' ')[0]
-          console.log('Command received:', command)
-          
-          if (command === '/start')
-          {
-            console.log('Calling handleStartCommand...')
-            await handleStartCommand(chatId)
-            console.log('handleStartCommand completed')
-          }
-          else if (command === '/help')
-          {
-            console.log('Calling handleHelpCommand...')
-            await handleHelpCommand(chatId)
-            console.log('handleHelpCommand completed')
-          }
-          else
-          {
-            // Unknown command - process as regular message
-            console.log('Processing unknown command as regular message...')
-            await processMessage(chatId, messageText, message)
-            console.log('processMessage completed')
-          }
+          console.log('Calling handleStartCommand...')
+          await handleStartCommand(chatId)
+          console.log('handleStartCommand completed')
+        }
+        else if (command === '/help')
+        {
+          console.log('Calling handleHelpCommand...')
+          await handleHelpCommand(chatId)
+          console.log('handleHelpCommand completed')
         }
         else
         {
-          // Process message asynchronously
-          console.log('Processing regular message...')
+          console.log('Processing unknown command as regular message...')
           await processMessage(chatId, messageText, message)
           console.log('processMessage completed')
         }
       }
-      catch (error)
+      else
       {
-        console.error('Error in async message processing:', {
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        })
+        console.log('Processing regular message...')
+        await processMessage(chatId, messageText, message)
+        console.log('processMessage completed')
       }
-    })()
+    }
+    catch (error)
+    {
+      console.error('Error in async message processing:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+    }
+  })()
 
-    console.log('Returning response to Telegram')
-    return response
-  }
-  catch (error)
-  {
-    console.error('Webhook error:', error)
-    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
-  }
+  // Return response immediately
+  console.log('Returning 200 OK to Telegram')
+  return response
 }
