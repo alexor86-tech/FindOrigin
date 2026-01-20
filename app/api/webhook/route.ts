@@ -32,20 +32,24 @@ export async function POST(request: NextRequest)
 
     console.log('[WEBHOOK] Update parsed:', update?.update_id)
 
-    // Return 200 OK immediately
-    const response = NextResponse.json({ ok: true })
-    
-    // Process asynchronously
+    // Process update asynchronously
     if (update)
     {
+      // Start processing in background
       processUpdate(update).catch((error) =>
       {
         console.error('[WEBHOOK] Process error:', error)
       })
+      
+      // Wait a bit to ensure HTTPS request starts before function ends
+      // This prevents Vercel from killing the function before request is sent
+      console.log('[WEBHOOK] Waiting 500ms for request to start...')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      console.log('[WEBHOOK] Wait completed, returning response')
     }
 
     console.log('[WEBHOOK] Returning 200 OK')
-    return response
+    return NextResponse.json({ ok: true })
   }
   catch (error)
   {
