@@ -26,25 +26,42 @@ export async function POST(request: NextRequest)
 {
   try
   {
-    // Log incoming request for debugging
+    // Log incoming request for debugging (simplified headers)
     console.log('Received webhook request:', {
       method: request.method,
       url: request.url,
-      headers: Object.fromEntries(request.headers.entries()),
+      contentType: request.headers.get('content-type'),
+      contentLength: request.headers.get('content-length'),
     })
 
-    console.log('Parsing request body...')
+    console.log('Reading request body as text...')
+    let bodyText: string
+    try
+    {
+      bodyText = await request.text()
+      console.log('Request body read successfully, length:', bodyText.length)
+    }
+    catch (readError)
+    {
+      console.error('Error reading request body:', {
+        error: readError instanceof Error ? readError.message : String(readError),
+        stack: readError instanceof Error ? readError.stack : undefined,
+      })
+      return NextResponse.json({ ok: false, error: 'Failed to read request body' }, { status: 400 })
+    }
+
+    console.log('Parsing JSON from body text...')
     let update
     try
     {
-      update = await request.json()
+      update = JSON.parse(bodyText)
       console.log('Request body parsed successfully')
     }
     catch (jsonError)
     {
       console.error('Error parsing JSON:', {
         error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-        stack: jsonError instanceof Error ? jsonError.stack : undefined,
+        bodyPreview: bodyText.substring(0, 200),
       })
       return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
     }
