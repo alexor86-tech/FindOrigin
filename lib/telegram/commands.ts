@@ -6,15 +6,11 @@ import { sendMessage } from './api'
 
 /**
  * Handle /start command
- * @param {number} chatId - Chat ID
+ * @param {number} chatId - Chat ID [in]
  */
 export async function handleStartCommand(chatId: number): Promise<void>
 {
-  try
-  {
-    console.log('Handling /start command for chat:', chatId)
-    
-    const message = `👋 Привет! Я бот FindOrigin.
+  const message = `👋 Привет! Я бот FindOrigin.
 
 Я помогаю найти источники информации для текстов или Telegram-постов.
 
@@ -27,27 +23,16 @@ export async function handleStartCommand(chatId: number): Promise<void>
 Команды:
 /help - показать справку`
 
-    const result = await sendMessage(chatId, message)
-    console.log('Start command response sent successfully:', result)
-  }
-  catch (error)
-  {
-    console.error('Error in handleStartCommand:', error)
-    throw error
-  }
+  await sendMessage(chatId, message)
 }
 
 /**
  * Handle /help command
- * @param {number} chatId - Chat ID
+ * @param {number} chatId - Chat ID [in]
  */
 export async function handleHelpCommand(chatId: number): Promise<void>
 {
-  try
-  {
-    console.log('Handling /help command for chat:', chatId)
-    
-    const message = `ℹ️ Справка по использованию бота FindOrigin
+  const message = `ℹ️ Справка по использованию бота FindOrigin
 
 🔍 Что делает бот:
 Бот анализирует текст или Telegram-пост и ищет источники информации в интернете.
@@ -71,12 +56,5 @@ export async function handleHelpCommand(chatId: number): Promise<void>
 /start - начать работу
 /help - показать эту справку`
 
-    const result = await sendMessage(chatId, message)
-    console.log('Help command response sent successfully:', result)
-  }
-  catch (error)
-  {
-    console.error('Error in handleHelpCommand:', error)
-    throw error
-  }
+  await sendMessage(chatId, message)
 }

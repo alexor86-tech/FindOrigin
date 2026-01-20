@@ -10,9 +10,9 @@ import { analyzeRelevance, getTopResults, ScoredResult } from '../ai/openai'
 
 /**
  * Process incoming message
- * @param {number} chatId - Chat ID
- * @param {string} messageText - Message text
- * @param {TelegramMessage} message - Full message object
+ * @param {number} chatId - Chat ID [in]
+ * @param {string} messageText - Message text [in]
+ * @param {TelegramMessage} message - Full message object [in]
  */
 export async function processMessage(
   chatId: number,
@@ -22,27 +22,22 @@ export async function processMessage(
 {
   try
   {
-    // Send "processing" message
     await sendMessage(chatId, '🔍 Обрабатываю запрос...')
 
-    // Extract text from message or Telegram post
     const text = await extractText(messageText, message)
 
-    // Validate input
     if (!validateInput(text))
     {
       await sendMessage(chatId, '❌ Пожалуйста, отправьте текст или ссылку на Telegram-пост.')
       return
     }
 
-    // Use text directly as search query (no entity extraction)
     await sendMessage(chatId, '🔎 Ищу источники...')
     
     let searchResults: SearchResult[] = []
     
     try
     {
-      // Search with original text (get up to 10 results for AI analysis)
       searchResults = await searchGoogle(text, 10)
     }
     catch (error)
@@ -64,7 +59,6 @@ export async function processMessage(
       return
     }
 
-    // Analyze relevance with AI
     await sendMessage(chatId, '🤖 Анализирую релевантность источников...')
     
     let scoredResults: ScoredResult[] = []
@@ -81,7 +75,6 @@ export async function processMessage(
         '⚠️ Ошибка при анализе источников. Показываю результаты поиска без оценки.'
       )
       
-      // Fallback: show top 3 results without scoring
       scoredResults = searchResults.slice(0, 3).map(result => ({
         ...result,
         confidence: 50,
@@ -89,7 +82,6 @@ export async function processMessage(
       }))
     }
 
-    // Get top 3 results
     const topResults = getTopResults(scoredResults, 3)
 
     if (topResults.length === 0)
@@ -101,13 +93,12 @@ export async function processMessage(
       return
     }
 
-    // Format response with confidence scores
     let responseText = '📚 Найденные источники:\n\n'
     
     for (let i = 0; i < topResults.length; i++)
     {
       const result = topResults[i]
-      const confidenceEmoji = result.confidence >= 80 ? '🟢' : result.confidence >= 60 ? '🟡' : '🔴'
+      const confidenceEmoji = (result.confidence >= 80) ? '🟢' : ((result.confidence >= 60) ? '🟡' : '🔴')
       
       responseText += `${i + 1}. ${result.title}\n`
       responseText += `${result.link}\n`
@@ -126,7 +117,6 @@ export async function processMessage(
       responseText += '\n'
     }
 
-    // Send response
     await sendMessage(chatId, responseText)
   }
   catch (error)

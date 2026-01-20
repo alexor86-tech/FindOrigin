@@ -19,97 +19,73 @@ export async function GET(request: NextRequest)
  */
 export async function POST(request: NextRequest)
 {
-  console.log('[WEBHOOK] POST received')
-  
   try
   {
-    // Read body immediately (must be done before returning response)
-    const update = await request.json().catch((error) =>
+    const update = await request.json().catch(() => null)
+
+    if (!update)
     {
-      console.error('[WEBHOOK] JSON parse error:', error)
-      return null
-    })
+      return NextResponse.json({ ok: false, error: 'Invalid update' }, { status: 400 })
+    }
 
-    console.log('[WEBHOOK] Update parsed:', update?.update_id)
-
+    // Return 200 OK immediately
+    const response = NextResponse.json({ ok: true })
+    
     // Process update asynchronously
     if (update)
     {
-      // Start processing in background
       processUpdate(update).catch((error) =>
       {
         console.error('[WEBHOOK] Process error:', error)
       })
       
-      // Wait a bit to ensure HTTPS request starts before function ends
-      // This prevents Vercel from killing the function before request is sent
-      console.log('[WEBHOOK] Waiting 500ms for request to start...')
+      // Wait to ensure HTTPS request starts before function ends
       await new Promise(resolve => setTimeout(resolve, 500))
-      console.log('[WEBHOOK] Wait completed, returning response')
     }
 
-    console.log('[WEBHOOK] Returning 200 OK')
-    return NextResponse.json({ ok: true })
+    return response
   }
   catch (error)
   {
     console.error('[WEBHOOK] Fatal error:', error)
-    // Still return 200 OK to prevent Telegram retries
     return NextResponse.json({ ok: true })
   }
 }
 
 /**
  * Process Telegram update asynchronously
+ * @param {object} update - Telegram update object
  */
 async function processUpdate(update: any): Promise<void>
 {
-  try
+  const message = update.message || update.edited_message
+  if (!message)
   {
-    const message = update.message || update.edited_message
-    if (!message)
-    {
-      console.log('[WEBHOOK] No message')
-      return
-    }
-
-    const chatId = message.chat?.id
-    const messageText = message.text
-
-    if (!chatId)
-    {
-      console.warn('[WEBHOOK] No chatId')
-      return
-    }
-
-    console.log('[WEBHOOK] Processing:', { chatId, cmd: messageText?.substring(0, 20) })
-
-    if (messageText === '/start')
-    {
-      console.log('[WEBHOOK] /start')
-      await handleStartCommand(chatId)
-    }
-    else if (messageText === '/help')
-    {
-      console.log('[WEBHOOK] /help')
-      await handleHelpCommand(chatId)
-    }
-    else if (messageText?.startsWith('/'))
-    {
-      console.log('[WEBHOOK] Unknown command')
-      await processMessage(chatId, messageText, message)
-    }
-    else if (messageText)
-    {
-      console.log('[WEBHOOK] Regular message')
-      await processMessage(chatId, messageText, message)
-    }
+    return
   }
-  catch (error)
+
+  const chatId = message.chat?.id
+  const messageText = message.text
+
+  if (!chatId || !messageText)
   {
-    console.error('[WEBHOOK] Update processing error:', {
-      error: error instanceof Error ? error.message : String(error),
-    })
-    throw error
+    return
+  }
+
+  if (messageText === '/start')
+  {
+    await handleStartCommand(chatId)
+  }
+  else if (messageText === '/help')
+  {
+    await handleHelpCommand(chatId)
+  }
+  else if (messageText.startsWith('/'))
+  {
+    await processMessage(chatId, messageText, message)
+  }
+  else
+  {
+    await processMessage(chatId, messageText, message)
   }
 }

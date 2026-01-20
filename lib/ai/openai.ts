@@ -5,7 +5,6 @@
 import OpenAI from 'openai'
 import { SearchResult } from '../search/google'
 
-// Lazy initialization to avoid errors during build
 let openaiInstance: OpenAI | null = null
 
 function getOpenAI(): OpenAI
@@ -32,9 +31,9 @@ export interface ScoredResult extends SearchResult
 
 /**
  * Compare original text with search results and score relevance
- * @param {string} originalText - Original text from user
- * @param {SearchResult[]} searchResults - Search results to analyze
- * @returns {Promise<ScoredResult[]>} - Results with confidence scores
+ * @param {string} originalText - Original text from user [in]
+ * @param {SearchResult[]} searchResults - Search results to analyze [in]
+ * @returns {Promise<ScoredResult[]>} - Results with confidence scores [out]
  */
 export async function analyzeRelevance(
   originalText: string,
@@ -46,10 +45,8 @@ export async function analyzeRelevance(
     return []
   }
 
-  // Limit to top 10 results for analysis (to avoid token limits and costs)
   const resultsToAnalyze = searchResults.slice(0, 10)
 
-  // Prepare context for AI
   const resultsContext = resultsToAnalyze.map((result, index) =>
   {
     return `[${index + 1}] ${result.title}\nURL: ${result.link}\nSnippet: ${result.snippet || 'No snippet'}`
@@ -116,7 +113,6 @@ Respond in JSON format:
 
     const analysis = JSON.parse(content)
 
-    // Map AI scores to results
     const scoredResults: ScoredResult[] = resultsToAnalyze.map((result, index) =>
     {
       const analysisItem = analysis.results?.find((r: any) => r.index === index + 1)
@@ -128,7 +124,6 @@ Respond in JSON format:
       }
     })
 
-    // Sort by confidence (highest first)
     scoredResults.sort((a, b) => b.confidence - a.confidence)
 
     return scoredResults
@@ -137,7 +132,6 @@ Respond in JSON format:
   {
     console.error('Error analyzing relevance with AI:', error)
     
-    // Fallback: return results with default confidence
     return resultsToAnalyze.map(result => ({
       ...result,
       confidence: 50,
@@ -148,9 +142,9 @@ Respond in JSON format:
 
 /**
  * Get top N results based on confidence score
- * @param {ScoredResult[]} scoredResults - Results with confidence scores
- * @param {number} topN - Number of top results to return
- * @returns {ScoredResult[]} - Top N results
+ * @param {ScoredResult[]} scoredResults - Results with confidence scores [in]
+ * @param {number} topN - Number of top results to return [in]
+ * @returns {ScoredResult[]} - Top N results [out]
  */
 export function getTopResults(scoredResults: ScoredResult[], topN: number = 3): ScoredResult[]
 {
