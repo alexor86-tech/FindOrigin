@@ -43,10 +43,37 @@ export async function processMessage(
     catch (error)
     {
       console.error('Search error:', error)
-      await sendMessage(
-        chatId,
-        '⚠️ Ошибка при поиске источников. Проверьте настройку Google Search API.'
-      )
+      
+      // Provide more specific error messages
+      let errorMessage = '⚠️ Ошибка при поиске источников.'
+      
+      if (error instanceof Error)
+      {
+        const errorText = error.message.toLowerCase()
+        
+        if (errorText.includes('not set') || errorText.includes('not properly configured'))
+        {
+          errorMessage = '⚠️ Google Search API не настроен. Проверьте переменные окружения GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID.'
+        }
+        else if (errorText.includes('quota exceeded') || errorText.includes('quota'))
+        {
+          errorMessage = '⚠️ Превышен лимит запросов Google Search API. Попробуйте позже или проверьте квоту API.'
+        }
+        else if (errorText.includes('access denied') || errorText.includes('authentication failed') || errorText.includes('invalid'))
+        {
+          errorMessage = '⚠️ Ошибка авторизации Google Search API. Проверьте правильность API ключа и Search Engine ID.'
+        }
+        else if (errorText.includes('api is enabled'))
+        {
+          errorMessage = '⚠️ Google Custom Search API не включен. Включите API в Google Cloud Console.'
+        }
+        else
+        {
+          errorMessage = `⚠️ Ошибка при поиске источников: ${error.message}`
+        }
+      }
+      
+      await sendMessage(chatId, errorMessage)
       return
     }
 

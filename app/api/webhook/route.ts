@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processMessage } from '@/lib/telegram/processor'
 import { handleStartCommand, handleHelpCommand } from '@/lib/telegram/commands'
+import { checkGoogleSearchConfig } from '@/lib/search/google'
 
 /**
  * Handle GET requests (webhook verification, health check)
  */
 export async function GET(request: NextRequest)
 {
+  const configCheck = checkGoogleSearchConfig()
+  
   return NextResponse.json({ 
     status: 'ok', 
     message: 'FindOrigin bot webhook is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    config: {
+      googleSearch: configCheck.configured ? 'configured' : 'not configured',
+      errors: configCheck.errors,
+    },
   })
 }
 
