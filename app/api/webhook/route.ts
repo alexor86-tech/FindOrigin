@@ -30,9 +30,12 @@ export async function POST(request: NextRequest)
     console.log('Received webhook request:', {
       method: request.method,
       url: request.url,
+      headers: Object.fromEntries(request.headers.entries()),
     })
 
+    console.log('Parsing request body...')
     const update = await request.json()
+    console.log('Request body parsed successfully')
     
     console.log('Webhook update:', JSON.stringify(update, null, 2))
 
@@ -69,46 +72,59 @@ export async function POST(request: NextRequest)
     console.log('Processing message:', { chatId, messageText })
 
     // Return 200 OK immediately
+    console.log('Returning 200 OK response immediately')
     const response = NextResponse.json({ ok: true })
 
-    // Handle commands
-    if (messageText?.startsWith('/'))
+    // Handle commands asynchronously
+    console.log('Starting async message processing...')
+    ;(async () =>
     {
-      const command = messageText.split(' ')[0]
-      console.log('Command received:', command)
-      
-      if (command === '/start')
+      try
       {
-        handleStartCommand(chatId).catch((error) =>
+        // Handle commands
+        if (messageText?.startsWith('/'))
         {
-          console.error('Error handling start command:', error)
+          const command = messageText.split(' ')[0]
+          console.log('Command received:', command)
+          
+          if (command === '/start')
+          {
+            console.log('Calling handleStartCommand...')
+            await handleStartCommand(chatId)
+            console.log('handleStartCommand completed')
+          }
+          else if (command === '/help')
+          {
+            console.log('Calling handleHelpCommand...')
+            await handleHelpCommand(chatId)
+            console.log('handleHelpCommand completed')
+          }
+          else
+          {
+            // Unknown command - process as regular message
+            console.log('Processing unknown command as regular message...')
+            await processMessage(chatId, messageText, message)
+            console.log('processMessage completed')
+          }
+        }
+        else
+        {
+          // Process message asynchronously
+          console.log('Processing regular message...')
+          await processMessage(chatId, messageText, message)
+          console.log('processMessage completed')
+        }
+      }
+      catch (error)
+      {
+        console.error('Error in async message processing:', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
         })
       }
-      else if (command === '/help')
-      {
-        handleHelpCommand(chatId).catch((error) =>
-        {
-          console.error('Error handling help command:', error)
-        })
-      }
-      else
-      {
-        // Unknown command - process as regular message
-        processMessage(chatId, messageText, message).catch((error) =>
-        {
-          console.error('Error processing message:', error)
-        })
-      }
-    }
-    else
-    {
-      // Process message asynchronously
-      processMessage(chatId, messageText, message).catch((error) =>
-      {
-        console.error('Error processing message:', error)
-      })
-    }
+    })()
 
+    console.log('Returning response to Telegram')
     return response
   }
   catch (error)
