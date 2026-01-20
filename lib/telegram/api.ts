@@ -20,8 +20,14 @@ async function httpsRequest(
 {
   return new Promise((resolve, reject) =>
   {
+    console.log('[HTTPS] Creating request...')
     const url = new URL(urlString)
     const postData = JSON.stringify(body)
+
+    console.log('[HTTPS] URL parsed:', {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+    })
 
     const options = {
       hostname: url.hostname,
@@ -36,20 +42,37 @@ async function httpsRequest(
       timeout: 10000, // 10 second timeout
     }
 
+    console.log('[HTTPS] Request options:', {
+      hostname: options.hostname,
+      path: options.path,
+      method: options.method,
+      contentLength: options.headers['Content-Length'],
+    })
+
+    console.log('[HTTPS] Creating https.request...')
     const req = https.request(options, (res) =>
     {
+      console.log('[HTTPS] Response received:', {
+        statusCode: res.statusCode,
+        statusMessage: res.statusMessage,
+        headers: res.headers,
+      })
+
       let data = ''
 
       res.on('data', (chunk) =>
       {
         data += chunk
+        console.log('[HTTPS] Data chunk received, total length:', data.length)
       })
 
       res.on('end', () =>
       {
+        console.log('[HTTPS] Response end, total data length:', data.length)
         try
         {
           const jsonData = JSON.parse(data)
+          console.log('[HTTPS] JSON parsed successfully')
           resolve({
             status: res.statusCode || 500,
             statusText: res.statusMessage || 'OK',
@@ -58,10 +81,11 @@ async function httpsRequest(
         }
         catch (error)
         {
+          console.error('[HTTPS] JSON parse error:', error)
           resolve({
             status: res.statusCode || 500,
             statusText: res.statusMessage || 'OK',
-            data: { raw: data },
+            data: { raw: data.substring(0, 200) },
           })
         }
       })
@@ -69,18 +93,30 @@ async function httpsRequest(
 
     req.on('error', (error) =>
     {
-      console.error('HTTPS request error:', error)
+      console.error('[HTTPS] Request error event:', {
+        error: error.message,
+        code: (error as any).code,
+        errno: (error as any).errno,
+        syscall: (error as any).syscall,
+      })
       reject(error)
     })
 
     req.on('timeout', () =>
     {
+      console.error('[HTTPS] Request timeout')
       req.destroy()
       reject(new Error('Request timeout'))
     })
 
+    req.on('close', () =>
+    {
+      console.log('[HTTPS] Request closed')
+    })
+
     if (signal.aborted)
     {
+      console.log('[HTTPS] Signal already aborted')
       req.destroy()
       reject(new Error('Request aborted'))
       return
@@ -88,11 +124,15 @@ async function httpsRequest(
 
     signal.addEventListener('abort', () =>
     {
+      console.log('[HTTPS] Signal aborted')
       req.destroy()
     })
 
+    console.log('[HTTPS] Writing request data...')
     req.write(postData)
+    console.log('[HTTPS] Ending request...')
     req.end()
+    console.log('[HTTPS] Request sent, waiting for response...')
   })
 }
 
