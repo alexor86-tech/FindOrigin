@@ -32,16 +32,22 @@ export async function sendMessage(
   } = {}
 ): Promise<object>
 {
-  const apiBaseUrl = getApiBaseUrl()
-  const url = `${apiBaseUrl}/sendMessage`
-  const body = {
-    chat_id: chatId,
-    text,
-    ...options,
-  }
-
   try
   {
+    const apiBaseUrl = getApiBaseUrl()
+    const url = `${apiBaseUrl}/sendMessage`
+    const body = {
+      chat_id: chatId,
+      text,
+      ...options,
+    }
+
+    console.log('Sending message to Telegram:', {
+      chatId,
+      textLength: text.length,
+      url: url.replace(/\/bot[^\/]+/, '/bot***'), // Hide token in logs
+    })
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -52,15 +58,41 @@ export async function sendMessage(
 
     if (!response.ok)
     {
-      const error = await response.json()
-      throw new Error(`Telegram API error: ${JSON.stringify(error)}`)
+      const errorText = await response.text()
+      let errorData
+      try
+      {
+        errorData = JSON.parse(errorText)
+      }
+      catch
+      {
+        errorData = { raw: errorText }
+      }
+      
+      console.error('Telegram API error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+      })
+      
+      throw new Error(`Telegram API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
     }
 
-    return await response.json()
+    const result = await response.json()
+    console.log('Message sent successfully:', {
+      chatId,
+      messageId: result.result?.message_id,
+    })
+    
+    return result
   }
   catch (error)
   {
-    console.error('Error sending message:', error)
+    console.error('Error sending message to Telegram:', {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     throw error
   }
 }
