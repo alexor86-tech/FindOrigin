@@ -216,26 +216,65 @@ export async function sendMessage(
     hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
   })
 
-  // Use https module directly for better reliability in Vercel serverless
+  // Try using fetch first (works better in Vercel), fallback to https
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
   try
   {
-    console.log('Attempting HTTPS request to Telegram API...', {
+    console.log('Attempting request to Telegram API...', {
       url: url.replace(/\/bot[^\/]+/, '/bot***'),
       method: 'POST',
       bodySize: JSON.stringify(body).length,
     })
 
-    const response = await httpsRequest(url, body, controller.signal)
+    let response: { status: number; statusText: string; data: any }
+    
+    // Try fetch first (better for Vercel)
+    try
+    {
+      console.log('Trying fetch()...')
+      const fetchResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      
+      console.log('Fetch response received:', {
+        status: fetchResponse.status,
+        statusText: fetchResponse.statusText,
+        ok: fetchResponse.ok,
+      })
+      
+      const data = await fetchResponse.json()
+      console.log('Fetch JSON parsed')
+      
+      response = {
+        status: fetchResponse.status,
+        statusText: fetchResponse.statusText,
+        data,
+      }
+    }
+    catch (fetchError)
+    {
+      console.warn('Fetch failed, trying https module:', {
+        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      })
+      
+      // Fallback to https module
+      response = await httpsRequest(url, body, controller.signal)
+    }
     
     clearTimeout(timeoutId)
     
-    console.log('Response received:', {
+    console.log('✅ Response received from Telegram API:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.status >= 200 && response.status < 300,
+      hasData: !!response.data,
     })
 
     if (response.status < 200 || response.status >= 300)
