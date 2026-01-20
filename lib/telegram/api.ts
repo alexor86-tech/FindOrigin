@@ -13,7 +13,17 @@ function getApiBaseUrl(): string
     throw new Error('TELEGRAM_BOT_TOKEN is not set')
   }
   
-  return `${apiUrl}${botToken}`
+  // Ensure URL is properly formatted
+  const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl
+  const fullUrl = `${baseUrl}${botToken}`
+  
+  console.log('Telegram API URL constructed:', {
+    apiUrl: baseUrl,
+    hasToken: !!botToken,
+    tokenLength: botToken.length,
+  })
+  
+  return fullUrl
 }
 
 /**
@@ -32,29 +42,38 @@ export async function sendMessage(
   } = {}
 ): Promise<object>
 {
+  const apiBaseUrl = getApiBaseUrl()
+  const url = `${apiBaseUrl}/sendMessage`
+  const body = {
+    chat_id: chatId,
+    text,
+    ...options,
+  }
+
+  console.log('Sending message to Telegram:', {
+    chatId,
+    textLength: text.length,
+    url: url.replace(/\/bot[^\/]+/, '/bot***'), // Hide token in logs
+    hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
+  })
+
+  // Add timeout and better error handling for Vercel serverless
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
   try
   {
-    const apiBaseUrl = getApiBaseUrl()
-    const url = `${apiBaseUrl}/sendMessage`
-    const body = {
-      chat_id: chatId,
-      text,
-      ...options,
-    }
-
-    console.log('Sending message to Telegram:', {
-      chatId,
-      textLength: text.length,
-      url: url.replace(/\/bot[^\/]+/, '/bot***'), // Hide token in logs
-    })
-
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'FindOrigin-Bot/1.0',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
+    
+    clearTimeout(timeoutId)
 
     if (!response.ok)
     {
@@ -86,14 +105,39 @@ export async function sendMessage(
     
     return result
   }
-  catch (error)
+  catch (fetchError)
   {
+    clearTimeout(timeoutId)
+    
+    // Handle abort (timeout)
+    if (fetchError instanceof Error && fetchError.name === 'AbortError')
+    {
+      console.error('Request timeout:', {
+        chatId,
+        url: url.replace(/\/bot[^\/]+/, '/bot***'),
+      })
+      throw new Error('Request timeout: Telegram API did not respond within 10 seconds')
+    }
+    
+    // Handle network errors
+    if (fetchError instanceof Error && (fetchError.message.includes('fetch failed') || fetchError.message.includes('ECONNREFUSED')))
+    {
+      console.error('Network error when calling Telegram API:', {
+        url: url.replace(/\/bot[^\/]+/, '/bot***'),
+        error: fetchError.message,
+        chatId,
+      })
+      throw new Error(`Network error: Unable to reach Telegram API. ${fetchError.message}`)
+    }
+    
+    // Re-throw other errors
     console.error('Error sending message to Telegram:', {
       chatId,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      stack: fetchError instanceof Error ? fetchError.stack : undefined,
+      url: url.replace(/\/bot[^\/]+/, '/bot***'),
     })
-    throw error
+    throw fetchError
   }
 }
 
