@@ -197,6 +197,26 @@ async function httpsRequest(
       console.log('[HTTPS] Socket assigned:', {
         remoteAddress: socket.remoteAddress,
         remotePort: socket.remotePort,
+        localAddress: socket.localAddress,
+        localPort: socket.localPort,
+        connecting: socket.connecting,
+        destroyed: socket.destroyed,
+        readyState: socket.readyState,
+      })
+      
+      socket.on('connect', () =>
+      {
+        console.log('[HTTPS] ✅ Socket connected:', {
+          remoteAddress: socket.remoteAddress,
+          remotePort: socket.remotePort,
+          localAddress: socket.localAddress,
+          localPort: socket.localPort,
+        })
+      })
+      
+      socket.on('secureConnect', () =>
+      {
+        console.log('[HTTPS] ✅ Secure connection established')
       })
       
       socket.on('error', (socketError) =>
@@ -204,12 +224,28 @@ async function httpsRequest(
         console.error('[HTTPS] ❌ Socket error:', {
           error: socketError.message,
           code: (socketError as any).code,
+          errno: (socketError as any).errno,
+          syscall: (socketError as any).syscall,
         })
       })
       
       socket.on('timeout', () =>
       {
         console.error('[HTTPS] ❌ Socket timeout')
+      })
+      
+      socket.on('close', (hadError) =>
+      {
+        console.log('[HTTPS] Socket closed:', {
+          hadError,
+          remoteAddress: socket.remoteAddress,
+          remotePort: socket.remotePort,
+        })
+      })
+      
+      socket.on('end', () =>
+      {
+        console.log('[HTTPS] Socket end event')
       })
     })
 
@@ -221,18 +257,34 @@ async function httpsRequest(
       req.end()
       console.log('[HTTPS] Request ended, waiting for response...')
       
-      // Diagnostic: check if request is still alive after 2 seconds
+      // Diagnostic: check request state periodically
+      const diagnosticInterval = setInterval(() =>
+      {
+        if (req.destroyed)
+        {
+          console.log('[HTTPS] Diagnostic: Request destroyed')
+          clearInterval(diagnosticInterval)
+          return
+        }
+        
+        const socket = req.socket
+        console.log('[HTTPS] Diagnostic: Request still pending', {
+          destroyed: req.destroyed,
+          socketExists: !!socket,
+          socketDestroyed: socket?.destroyed,
+          socketConnecting: socket?.connecting,
+          socketRemoteAddress: socket?.remoteAddress,
+          socketRemotePort: socket?.remotePort,
+          socketReadyState: socket?.readyState,
+        })
+      }, 2000)
+      
+      // Clear diagnostic after 20 seconds
       setTimeout(() =>
       {
-        if (!req.destroyed)
-        {
-          console.log('[HTTPS] Diagnostic: Request still pending after 2s', {
-            destroyed: req.destroyed,
-            socketExists: !!req.socket,
-            socketDestroyed: req.socket?.destroyed,
-          })
-        }
-      }, 2000)
+        clearInterval(diagnosticInterval)
+        console.log('[HTTPS] Diagnostic interval cleared')
+      }, 20000)
     }
     catch (writeError)
     {
