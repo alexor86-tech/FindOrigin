@@ -7,27 +7,49 @@ import { URL } from 'url'
 
 /**
  * Make HTTPS request using Node.js https module
- * @param {string} urlString - Full URL
- * @param {object} body - Request body
- * @param {AbortSignal} signal - Abort signal
- * @returns {Promise<{status: number, statusText: string, data: any}>} - Response data
  */
 async function httpsRequest(
   urlString: string,
-  body: object,
-  signal: AbortSignal
+  body: object
 ): Promise<{ status: number; statusText: string; data: any }>
 {
   return new Promise((resolve, reject) =>
   {
-    console.log('[HTTPS] Creating request...')
-    const url = new URL(urlString)
-    const postData = JSON.stringify(body)
+    console.log('[HTTPS] Starting request...')
+    
+    let url: URL
+    try
+    {
+      url = new URL(urlString)
+      console.log('[HTTPS] URL parsed successfully:', {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+      })
+    }
+    catch (urlError)
+    {
+      console.error('[HTTPS] ❌ URL parse error:', {
+        error: urlError instanceof Error ? urlError.message : String(urlError),
+        urlString: urlString.replace(/\/bot[^\/]+/, '/bot***'),
+      })
+      reject(new Error(`Invalid URL: ${urlError instanceof Error ? urlError.message : String(urlError)}`))
+      return
+    }
 
-    console.log('[HTTPS] URL parsed:', {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-    })
+    let postData: string
+    try
+    {
+      postData = JSON.stringify(body)
+      console.log('[HTTPS] Body stringified, length:', postData.length)
+    }
+    catch (stringifyError)
+    {
+      console.error('[HTTPS] ❌ JSON stringify error:', {
+        error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
+      })
+      reject(new Error(`Failed to stringify body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}`))
+      return
+    }
 
     const options = {
       hostname: url.hostname,
@@ -37,126 +59,188 @@ async function httpsRequest(
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(postData),
-        'User-Agent': 'FindOrigin-Bot/1.0',
       },
-      timeout: 10000, // 10 second timeout
+      timeout: 10000,
     }
 
-    console.log('[HTTPS] Request options:', {
+    console.log('[HTTPS] Request options prepared:', {
       hostname: options.hostname,
-      path: options.path,
+      port: options.port,
+      path: options.path.substring(0, 50) + '...',
       method: options.method,
       contentLength: options.headers['Content-Length'],
+      timeout: options.timeout,
     })
-
+    
     console.log('[HTTPS] Creating https.request...')
     const req = https.request(options, (res) =>
-    {
-      console.log('[HTTPS] Response callback fired!')
-      console.log('[HTTPS] Response received:', {
-        statusCode: res.statusCode,
-        statusMessage: res.statusMessage,
-        headersCount: Object.keys(res.headers).length,
-      })
-
-      let data = ''
-
-      res.on('data', (chunk) =>
       {
-        data += chunk
-        console.log('[HTTPS] Data chunk received, total length:', data.length)
-      })
+        console.log('[HTTPS] ✅ Response callback fired!', {
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          headersCount: Object.keys(res.headers || {}).length,
+        })
 
-      res.on('end', () =>
-      {
-        console.log('[HTTPS] Response end, total data length:', data.length)
-        try
-        {
-          const jsonData = JSON.parse(data)
-          console.log('[HTTPS] JSON parsed successfully')
-          resolve({
-            status: res.statusCode || 500,
-            statusText: res.statusMessage || 'OK',
-            data: jsonData,
-          })
-        }
-        catch (error)
-        {
-          console.error('[HTTPS] JSON parse error:', error)
-          resolve({
-            status: res.statusCode || 500,
-            statusText: res.statusMessage || 'OK',
-            data: { raw: data.substring(0, 200) },
-          })
-        }
-      })
-    })
+        let data = ''
+        let chunkCount = 0
 
+        res.on('data', (chunk) =>
+        {
+          chunkCount++
+          data += chunk
+          console.log(`[HTTPS] Data chunk #${chunkCount} received, total length: ${data.length}`)
+        })
+
+        res.on('end', () =>
+        {
+          console.log('[HTTPS] Response end event fired, total chunks:', chunkCount, 'total length:', data.length)
+          
+          if (!data)
+          {
+            console.warn('[HTTPS] ⚠️ Empty response body')
+          }
+          
+          try
+          {
+            const jsonData = JSON.parse(data)
+            console.log('[HTTPS] ✅ JSON parsed successfully:', {
+              ok: jsonData.ok,
+              hasResult: !!jsonData.result,
+              hasError: !!jsonData.error_code,
+            })
+            
+            if (jsonData.error_code)
+            {
+              console.error('[HTTPS] ⚠️ Telegram API returned error:', {
+                errorCode: jsonData.error_code,
+                description: jsonData.description,
+                parameters: jsonData.parameters,
+              })
+            }
+            
+            resolve({
+              status: res.statusCode || 200,
+              statusText: res.statusMessage || 'OK',
+              data: jsonData,
+            })
+          }
+          catch (parseError)
+          {
+            console.error('[HTTPS] ❌ JSON parse error:', {
+              error: parseError instanceof Error ? parseError.message : String(parseError),
+              dataPreview: data.substring(0, 500),
+              dataLength: data.length,
+            })
+            resolve({
+              status: res.statusCode || 200,
+              statusText: res.statusMessage || 'OK',
+              data: { raw: data.substring(0, 500), parseError: parseError instanceof Error ? parseError.message : String(parseError) },
+            })
+          }
+        })
+
+        res.on('error', (resError) =>
+        {
+          console.error('[HTTPS] ❌ Response stream error:', {
+            error: resError.message,
+            code: (resError as any).code,
+          })
+          reject(resError)
+        })
+
+        res.on('aborted', () =>
+        {
+          console.error('[HTTPS] ❌ Response aborted')
+          reject(new Error('Response aborted'))
+        })
+      })
+      
+    console.log('[HTTPS] Request object created')
+    
     req.on('error', (error) =>
     {
-      console.error('[HTTPS] Request error event:', {
-        error: error.message,
+      console.error('[HTTPS] ❌ Request error event:', {
+        message: error.message,
         code: (error as any).code,
         errno: (error as any).errno,
         syscall: (error as any).syscall,
+        hostname: (error as any).hostname,
+        port: (error as any).port,
       })
       reject(error)
     })
 
     req.on('timeout', () =>
     {
-      console.error('[HTTPS] Request timeout')
+      console.error('[HTTPS] ❌ Request timeout after', options.timeout, 'ms')
+      console.error('[HTTPS] Request state:', {
+        destroyed: req.destroyed,
+        socketExists: !!req.socket,
+        socketDestroyed: req.socket?.destroyed,
+      })
       req.destroy()
-      reject(new Error('Request timeout'))
+      reject(new Error(`Request timeout after ${options.timeout}ms`))
     })
 
     req.on('close', () =>
     {
-      console.log('[HTTPS] Request closed')
+      console.log('[HTTPS] Request closed event')
     })
 
-    if (signal.aborted)
+    req.on('connect', () =>
     {
-      console.log('[HTTPS] Signal already aborted')
-      req.destroy()
-      reject(new Error('Request aborted'))
-      return
-    }
-
-    signal.addEventListener('abort', () =>
-    {
-      console.log('[HTTPS] Signal aborted')
-      req.destroy()
+      console.log('[HTTPS] Request connected')
     })
 
-    console.log('[HTTPS] Writing request data...')
-    req.write(postData)
-    console.log('[HTTPS] Ending request...')
-    req.end()
-    console.log('[HTTPS] Request sent, waiting for response...')
-    
-    // Add diagnostic timeout
-    const diagnosticTimeout = setTimeout(() =>
+    req.on('socket', (socket) =>
     {
-      console.warn('[HTTPS] Diagnostic: 5 seconds passed, request still pending')
-      console.warn('[HTTPS] Request destroyed:', req.destroyed)
-      console.warn('[HTTPS] Request socket:', req.socket ? 'exists' : 'null')
-    }, 5000)
-    
-    // Clear diagnostic timeout when request completes
-    const originalResolve = resolve
-    const originalReject = reject
-    
-    resolve = (value: any) =>
+      console.log('[HTTPS] Socket assigned:', {
+        remoteAddress: socket.remoteAddress,
+        remotePort: socket.remotePort,
+      })
+      
+      socket.on('error', (socketError) =>
+      {
+        console.error('[HTTPS] ❌ Socket error:', {
+          error: socketError.message,
+          code: (socketError as any).code,
+        })
+      })
+      
+      socket.on('timeout', () =>
+      {
+        console.error('[HTTPS] ❌ Socket timeout')
+      })
+    })
+
+    try
     {
-      clearTimeout(diagnosticTimeout)
-      originalResolve(value)
+      console.log('[HTTPS] Writing request data...')
+      req.write(postData)
+      console.log('[HTTPS] Data written, ending request...')
+      req.end()
+      console.log('[HTTPS] Request ended, waiting for response...')
+      
+      // Diagnostic: check if request is still alive after 2 seconds
+      setTimeout(() =>
+      {
+        if (!req.destroyed)
+        {
+          console.log('[HTTPS] Diagnostic: Request still pending after 2s', {
+            destroyed: req.destroyed,
+            socketExists: !!req.socket,
+            socketDestroyed: req.socket?.destroyed,
+          })
+        }
+      }, 2000)
     }
-    
-    reject = (error: any) =>
+    catch (writeError)
     {
-      clearTimeout(diagnosticTimeout)
-      originalReject(error)
+      console.error('[HTTPS] ❌ Error writing/ending request:', {
+        error: writeError instanceof Error ? writeError.message : String(writeError),
+        stack: writeError instanceof Error ? writeError.stack : undefined,
+      })
+      reject(writeError)
     }
   })
 }
@@ -172,25 +256,12 @@ function getApiBaseUrl(): string
     throw new Error('TELEGRAM_BOT_TOKEN is not set')
   }
   
-  // Ensure URL is properly formatted
   const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl
-  const fullUrl = `${baseUrl}${botToken}`
-  
-  console.log('Telegram API URL constructed:', {
-    apiUrl: baseUrl,
-    hasToken: !!botToken,
-    tokenLength: botToken.length,
-  })
-  
-  return fullUrl
+  return `${baseUrl}${botToken}`
 }
 
 /**
  * Send message to Telegram chat
- * @param {number} chatId - Chat ID
- * @param {string} text - Message text
- * @param {object} options - Additional options
- * @returns {Promise<object>} - API response
  */
 export async function sendMessage(
   chatId: number,
@@ -209,120 +280,67 @@ export async function sendMessage(
     ...options,
   }
 
-  console.log('Sending message to Telegram:', {
+  console.log('[SEND] Starting sendMessage:', {
     chatId,
     textLength: text.length,
-    url: url.replace(/\/bot[^\/]+/, '/bot***'), // Hide token in logs
+    url: url.replace(/\/bot[^\/]+/, '/bot***'),
     hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
+    tokenLength: process.env.TELEGRAM_BOT_TOKEN?.length || 0,
   })
-
-  // Try using fetch first (works better in Vercel), fallback to https
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
   try
   {
-    console.log('Attempting request to Telegram API...', {
-      url: url.replace(/\/bot[^\/]+/, '/bot***'),
-      method: 'POST',
-      bodySize: JSON.stringify(body).length,
-    })
-
-    let response: { status: number; statusText: string; data: any }
+    console.log('[SEND] Calling httpsRequest...')
     
-    // Try fetch first (better for Vercel)
-    try
-    {
-      console.log('Trying fetch()...')
-      console.log('Fetch options:', {
-        method: 'POST',
-        url: url.replace(/\/bot[^\/]+/, '/bot***'),
-        hasBody: !!body,
-        bodySize: JSON.stringify(body).length,
-      })
-      
-      const fetchPromise = fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
-      
-      console.log('Fetch promise created, awaiting...')
-      const fetchResponse = await Promise.race([
-        fetchPromise,
-        new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Fetch timeout after 8s')), 8000)
-        ),
-      ])
-      
-      console.log('✅ Fetch response received:', {
-        status: fetchResponse.status,
-        statusText: fetchResponse.statusText,
-        ok: fetchResponse.ok,
-        headers: Object.fromEntries(fetchResponse.headers.entries()),
-      })
-      
-      console.log('Reading fetch response body...')
-      const data = await fetchResponse.json()
-      console.log('✅ Fetch JSON parsed:', {
-        ok: data.ok,
-        hasResult: !!data.result,
-      })
-      
-      response = {
-        status: fetchResponse.status,
-        statusText: fetchResponse.statusText,
-        data,
-      }
-    }
-    catch (fetchError)
-    {
-      console.error('❌ Fetch failed:', {
-        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-        errorName: fetchError instanceof Error ? fetchError.name : 'Unknown',
-        stack: fetchError instanceof Error ? fetchError.stack : undefined,
-      })
-      
-      console.log('Falling back to https module...')
-      // Fallback to https module
-      response = await httpsRequest(url, body, controller.signal)
-    }
+    // Add timeout wrapper
+    const requestPromise = httpsRequest(url, body)
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('SendMessage timeout after 15s')), 15000)
+    )
     
-    clearTimeout(timeoutId)
+    console.log('[SEND] Waiting for response with 15s timeout...')
+    const response = await Promise.race([requestPromise, timeoutPromise])
     
-    console.log('✅ Response received from Telegram API:', {
+    console.log('[SEND] ✅ Response received:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.status >= 200 && response.status < 300,
       hasData: !!response.data,
+      dataOk: response.data?.ok,
     })
 
     if (response.status < 200 || response.status >= 300)
     {
-      console.error('Telegram API error response:', {
+      console.error('[SEND] ❌ HTTP status error:', {
         status: response.status,
         statusText: response.statusText,
-        error: response.data,
+        data: response.data,
       })
-      
-      throw new Error(`Telegram API error: ${response.status} ${response.statusText} - ${JSON.stringify(response.data)}`)
+      throw new Error(`Telegram API HTTP error: ${response.status} ${response.statusText} - ${JSON.stringify(response.data)}`)
     }
 
-    console.log('Message sent successfully:', {
-      chatId,
+    if (!response.data.ok)
+    {
+      console.error('[SEND] ❌ Telegram API returned error:', {
+        errorCode: response.data.error_code,
+        description: response.data.description,
+        parameters: response.data.parameters,
+        fullResponse: response.data,
+      })
+      throw new Error(`Telegram API error: ${response.data.error_code} - ${response.data.description}`)
+    }
+
+    console.log('[SEND] ✅ Message sent successfully!', {
       messageId: response.data.result?.message_id,
+      chatId: response.data.result?.chat?.id,
+      date: response.data.result?.date,
     })
     
     return response.data
   }
   catch (error)
   {
-    clearTimeout(timeoutId)
-    
-    console.error('Error sending message to Telegram:', {
+    console.error('[SEND] ❌ Fatal error in sendMessage:', {
       errorType: error instanceof Error ? error.constructor.name : typeof error,
       errorName: error instanceof Error ? error.name : 'Unknown',
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -330,64 +348,27 @@ export async function sendMessage(
       chatId,
       url: url.replace(/\/bot[^\/]+/, '/bot***'),
     })
-    
-    // Handle abort (timeout)
-    if (error instanceof Error && (error.name === 'AbortError' || error.message === 'Request aborted'))
-    {
-      throw new Error('Request timeout: Telegram API did not respond within 10 seconds')
-    }
-    
-    // Handle network errors
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    const isNetworkError = 
-      errorMessage.includes('fetch failed') ||
-      errorMessage.includes('ECONNREFUSED') ||
-      errorMessage.includes('ENOTFOUND') ||
-      errorMessage.includes('ETIMEDOUT') ||
-      errorMessage.includes('ECONNRESET') ||
-      errorMessage.includes('timeout')
-    
-    if (isNetworkError)
-    {
-      throw new Error(`Network error: Unable to reach Telegram API. ${errorMessage}`)
-    }
-    
     throw error
   }
 }
 
 /**
  * Get message from Telegram channel/post
- * @param {string} chatId - Chat/channel ID
- * @param {number} messageId - Message ID
- * @returns {Promise<object>} - Message object
  */
 export async function getMessage(chatId: string, messageId: number): Promise<object>
 {
-  const apiBaseUrl = getApiBaseUrl()
-  const url = `${apiBaseUrl}/forwardMessage`
-  // Note: This is a workaround - Telegram Bot API doesn't allow direct access to channel posts
-  // In production, you might need to use Telegram Client API or store messages when bot is added to channel
   throw new Error('Direct message retrieval not supported via Bot API')
 }
 
 /**
  * Extract text from Telegram post URL
- * @param {string} url - Telegram post URL (e.g., t.me/channel/123)
- * @returns {Promise<string>} - Extracted text
  */
 export async function extractTextFromTelegramUrl(url: string): Promise<string>
 {
-  // Parse URL format: t.me/channel/123 or t.me/channel/123?thread=456
   const match = url.match(/t\.me\/([^\/]+)\/(\d+)/)
   if (!match)
   {
     throw new Error('Invalid Telegram URL format')
   }
-
-  const [, channel, messageId] = match
-  // Note: Telegram Bot API limitations - cannot directly fetch channel posts
-  // This would require Telegram Client API or web scraping
-  // For now, return error message
-  throw new Error('Telegram post extraction requires additional setup (Client API or web scraping)')
+  throw new Error('Telegram post extraction requires additional setup')
 }
