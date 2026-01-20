@@ -52,10 +52,11 @@ async function httpsRequest(
     console.log('[HTTPS] Creating https.request...')
     const req = https.request(options, (res) =>
     {
+      console.log('[HTTPS] Response callback fired!')
       console.log('[HTTPS] Response received:', {
         statusCode: res.statusCode,
         statusMessage: res.statusMessage,
-        headers: res.headers,
+        headersCount: Object.keys(res.headers).length,
       })
 
       let data = ''
@@ -133,6 +134,30 @@ async function httpsRequest(
     console.log('[HTTPS] Ending request...')
     req.end()
     console.log('[HTTPS] Request sent, waiting for response...')
+    
+    // Add diagnostic timeout
+    const diagnosticTimeout = setTimeout(() =>
+    {
+      console.warn('[HTTPS] Diagnostic: 5 seconds passed, request still pending')
+      console.warn('[HTTPS] Request destroyed:', req.destroyed)
+      console.warn('[HTTPS] Request socket:', req.socket ? 'exists' : 'null')
+    }, 5000)
+    
+    // Clear diagnostic timeout when request completes
+    const originalResolve = resolve
+    const originalReject = reject
+    
+    resolve = (value: any) =>
+    {
+      clearTimeout(diagnosticTimeout)
+      originalResolve(value)
+    }
+    
+    reject = (error: any) =>
+    {
+      clearTimeout(diagnosticTimeout)
+      originalReject(error)
+    }
   })
 }
 
