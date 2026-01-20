@@ -34,10 +34,29 @@ export async function POST(request: NextRequest)
     })
 
     console.log('Parsing request body...')
-    const update = await request.json()
-    console.log('Request body parsed successfully')
+    let update
+    try
+    {
+      update = await request.json()
+      console.log('Request body parsed successfully')
+    }
+    catch (jsonError)
+    {
+      console.error('Error parsing JSON:', {
+        error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+        stack: jsonError instanceof Error ? jsonError.stack : undefined,
+      })
+      return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
+    }
     
-    console.log('Webhook update:', JSON.stringify(update, null, 2))
+    console.log('Webhook update received:', {
+      updateId: update?.update_id,
+      hasMessage: !!update?.message,
+      hasCallbackQuery: !!update?.callback_query,
+      hasEditedMessage: !!update?.edited_message,
+    })
+    
+    console.log('Webhook update full:', JSON.stringify(update, null, 2))
 
     // Quick validation
     if (!update)
